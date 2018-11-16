@@ -76,15 +76,18 @@ public:
         const rpc::calibration::SubscribeCalibrateAccelerometerRequest *request,
         grpc::ServerWriter<rpc::calibration::CalibrateAccelerometerResponse> *writer) override
     {
+        std::cout << "About to calibrate accelerometer" << std::endl;
         std::promise<void> stream_closed_promise;
         auto stream_closed_future = stream_closed_promise.get_future();
 
-        bool is_finished = false;
+        auto is_finished = std::make_shared<bool>(false);
 
+        std::cout << "setting callback" << std::endl;
         _calibration.calibrate_accelerometer_async(
-            [this, &writer, &stream_closed_promise, &is_finished](
+            [this, &writer, &stream_closed_promise, is_finished](
                 const dronecode_sdk::Calibration::Result result,
                 const dronecode_sdk::Calibration::ProgressData progress_data) {
+        std::cout << "Callback called!!!!!!!!!!!!!!!!!!!" << std::endl;
                 rpc::calibration::CalibrateAccelerometerResponse rpc_response;
                 rpc_response.set_allocated_calibration_result(
                     translateCalibrationResult(result).get());
@@ -92,8 +95,10 @@ public:
                     translateProgressData(progress_data).get());
 
                 std::lock_guard<std::mutex> lock(_subscribe_mutex);
-                if (!writer->Write(rpc_response) && !is_finished) {
-                    is_finished = true;
+
+                if (!*is_finished && !writer->Write(rpc_response)) {
+                    _calibration.calibrate_accelerometer_async(nullptr);
+                    *is_finished = true;
                     stream_closed_promise.set_value();
                 }
             });
